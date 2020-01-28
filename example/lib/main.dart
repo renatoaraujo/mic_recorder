@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 import 'dart:async';
-
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:mic_recorder/mic_recorder.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() => runApp(MyApp());
 
@@ -12,43 +13,133 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  String _platformVersion = 'Unknown';
+  MicRecorder micRecorder = new MicRecorder();
+  double recordPosition = 0.0;
+  bool isRecording = false;
+
+  String file;
 
   @override
-  void initState() {
+  initState() {
     super.initState();
-    initPlatformState();
+    micRecorder.setCallBack((dynamic data) {
+      _onEvent(data);
+    });
+    _validatePermissions();
   }
 
-  // Platform messages are asynchronous, so we initialize in an async method.
-  Future<void> initPlatformState() async {
-    String platformVersion;
-    // Platform messages may fail, so we use a try/catch PlatformException.
-    try {
-      platformVersion = await MicRecorder.platformVersion;
-    } on PlatformException {
-      platformVersion = 'Failed to get platform version.';
+  Future _validatePermissions() async {
+    PermissionStatus microphonePermissionStatus = await PermissionHandler()
+        .checkPermissionStatus(PermissionGroup.microphone);
+
+    if ('PermissionStatus.granted' != microphonePermissionStatus.toString()) {
+      final microphoneRequestResult = await PermissionHandler()
+          .requestPermissions([PermissionGroup.microphone]);
+      print(microphoneRequestResult.toString());
     }
 
-    // If the widget was removed from the tree while the asynchronous platform
-    // message was in flight, we want to discard the reply rather than calling
-    // setState to update our non-existent appearance.
-    if (!mounted) return;
+    PermissionStatus storagePermissionStatus = await PermissionHandler()
+        .checkPermissionStatus(PermissionGroup.microphone);
+
+    if ('PermissionStatus.granted' != storagePermissionStatus.toString()) {
+      final storageRequestResult = await PermissionHandler()
+          .requestPermissions([PermissionGroup.storage]);
+      print(storageRequestResult.toString());
+    }
+
+    return;
+  }
+
+  Future<String> get _localFile async {
+    DateTime time = new DateTime.now();
+    Directory appDocDirectory = await getExternalStorageDirectory();
+
+    String directory = appDocDirectory.path + "/audio/";
+    bool dirExists = await Directory(directory).exists();
+
+    if (!dirExists) {
+      await new Directory(directory)
+          .create(recursive: true)
+          .then((Directory dir) {
+        print('New directory created: ' + dir.path);
+      });
+    }
+
+    final filename = directory + time.millisecondsSinceEpoch.toString();
+    return filename;
+  }
+
+  Future _startRecording(String filename) async {
+    PermissionStatus permissionStatus = await PermissionHandler()
+        .checkPermissionStatus(PermissionGroup.microphone);
+
+    if ('PermissionStatus.granted' != permissionStatus.toString()) {
+      print('Check permission for microphone');
+      return;
+    }
+
+    String localFile = await _localFile;
 
     setState(() {
-      _platformVersion = platformVersion;
+      file = localFile;
     });
+
+    await micRecorder.startRecording(file);
+    setState(() {
+      isRecording = true;
+    });
+  }
+
+  Future _stopRecording() async {
+    await micRecorder.stopRecording();
+    setState(() {
+      isRecording = false;
+    });
+
+    String outputFile = await micRecorder.getOutputFile();
+    String audioFrequency = await micRecorder.getAudioFrequency();
+
+    print(audioFrequency);
+    print(outputFile);
+  }
+
+  void _onEvent(dynamic event) {
+    if (event['code'] == 'recording') {
+      setState(() {
+        recordPosition = event['current_time'];
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Plugin example app'),
+    return new MaterialApp(
+      home: new Scaffold(
+        appBar: new AppBar(
+          title: new Text('Mic recorder demo'),
         ),
-        body: Center(
-          child: Text('Running on: $_platformVersion\n'),
+        body: new Center(
+          child: new Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              new Text(recordPosition.toStringAsFixed(2),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 50)),
+              SizedBox(height: 30),
+              new FloatingActionButton(
+                child: isRecording
+                    ? new Icon(Icons.mic, color: Colors.red)
+                    : new Icon(Icons.mic, color: Colors.white),
+                onPressed: () {
+                  if (isRecording) {
+                    _stopRecording();
+                  } else {
+                    _startRecording(null);
+                  }
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

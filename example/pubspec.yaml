@@ -13,6 +13,12 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^0.1.2
 
+  # Use permission_handler to check microphone permission
+  permission_handler: 4.2.0+hotfix.2
+
+  # To handle the path to generate audio file
+  path_provider: 1.5.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
